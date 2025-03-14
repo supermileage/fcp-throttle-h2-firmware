@@ -1,6 +1,5 @@
 #include <Arduino.h>
-
-#include <mcp2515.h>
+#include "mcp2515_can.h"
 #include <SPI.h>
 
 //Pins
@@ -14,17 +13,66 @@
 #define DIGIPOT_STEPS 128
 #define H2_OUT 5
 #define SPI_CS 6
+#define CAN_SPEED CAN_500KBPS // speed of CAN network
+#define CAN_CONTROLLER_SPEED MCP_8MHz 
+#define CAN_H2_ID 0x256
 
 #define THROTTLE_ENABLE_TIME 1000 //(ms)
 
-#define H2_THRESHOLD 1.0
+#define H2_THRESHOLD 1.0 // % hydrogen concentration
 
-struct can_frame canMsg;
-MCP2515 mcp2515(SPI_CS);
+mcp2515_can can(SPI_CS); // creating CAN object
+
+ static bool h2Flag = false;
+ static float currentH2Percent = 100;
+
+
+// This struct contains all the components of a CAN message. dataLength must be <= 8, 
+// and the first [dataLength] positions of data[] must contain valid data
+typedef uint8_t CanBuffer[8];
+	struct CanMessage {
+			uint32_t id;
+			uint8_t dataLength;
+			CanBuffer data;
+	};
 
 void throttleHandle();
 void canHandle();
 void digiPotWrite(pin_size_t cs, uint8_t step);
+
+int static a = 0;
+
+String getErrorDescription(int errorCode){
+  switch(errorCode){
+      case CAN_OK: 
+          return "CAN OK";
+          break;
+      case CAN_FAILINIT:
+          return "CAN FAIL INIT";
+          break;
+      case CAN_FAILTX:
+          return "CAN FAIL TX";
+          break;
+      case CAN_MSGAVAIL:
+          return "CAN MSG AVAIL";
+          break;
+      case CAN_NOMSG:
+          return "CAN NO MSG";
+          break;
+      case CAN_CTRLERROR:
+          return "CAN CTRL ERROR";
+          break;
+      case CAN_GETTXBFTIMEOUT:
+          return "CAN TX BF TIMEOUT";
+          break;
+      case CAN_SENDMSGTIMEOUT:    
+          return "CAN SEND MSG TIMEOUT";
+          break;
+      default:
+          return "CAN FAIL";
+          break;
+  }
+}
 
 void setup() {
   // Pins
@@ -33,11 +81,11 @@ void setup() {
   pinMode(THROTTLE_OUT, OUTPUT);
   pinMode(THROTTLE_ENABLE, OUTPUT);
   pinMode(H2_OUT, OUTPUT);
+  pinMode(SPI_CS, OUTPUT);
 
-  // mcp2515
-  mcp2515.reset();
-  mcp2515.setBitrate(CAN_500KBPS, MCP_8MHZ);
-  mcp2515.setNormalMode();
+	// CAN begin
+	int error = can.begin(CAN_SPEED, CAN_CONTROLLER_SPEED); // checks if it can communicate with mcp
+	Serial.println("CAN Init Status: " + getErrorDescription(error));
   
   // SPI
   SPI.begin();
@@ -53,17 +101,42 @@ void loop() {
 }
 
 void canHandle(){
-  // Polling based read of CAN message
-  float h2Percent = 0;
-  if (mcp2515.readMessage(&canMsg) == MCP2515::ERROR_OK) {
-    // Read H2 values in CAN frame
-    uint16_t h2Int = 0;
-    h2Int = canMsg.data[1]<<8 | canMsg.data[2];
-    h2Percent = h2Int * 0.01; // 0.00 - 100.00
+  float newH2Percent = currentH2Percent;
+  if (can.checkReceive() == CAN_MSGAVAIL) {
+    CanMessage message;
+    message.id = 0;
+    message.dataLength = 8;
+    can.readMsgBuf(&message.dataLength, message.data); 
+    // Polling based read of CAN message
+
+    Serial.print("ID: ");
+    Serial.println(message.id);
+
+    if (message.id == CAN_H2_ID) {
+      // Read H2 values in CAN frame
+      uint16_t h2Int = 0;
+      h2Int = message.data[1]<<8 | message.data[2];
+      newH2Percent = h2Int * 0.01; // 0.00 - 100.00
+
+      Serial.print("newH2Percent: ");
+      Serial.println(newH2Percent);
+
+      h2Flag = true;
+    } else{
+      newH2Percent = 100.0;
+      Serial.println("Uh oh");
+    }
   }
 
+  if(h2Flag){
+    Serial.print("H2 Flag: ");
+    Serial.println(h2Flag);
+  }
+
+  if(newH2Percent == currentH2Percent){ return; }
+
   // Write
-  if(h2Percent >= H2_THRESHOLD){
+  if(newH2Percent >= H2_THRESHOLD){
     //Shut down
     digiPotWrite(H2_OUT, 128);
   } else{
