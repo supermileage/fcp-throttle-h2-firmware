@@ -8,13 +8,16 @@
 #define THROTTLE_IN A0
 #define THROTTLE_OUT 10
 #define THROTTLE_ENABLE 8
+
 #define THROTTLE_MIN 0 // Minimum normalized output value
 #define THROTTLE_MAX 128.0 // Maximum normalized output value
 #define RAW_THROTTLE_MIN 0.83
 #define RAW_THROTTLE_MAX 4.37
+
 #define DIGIPOT_STEPS 128
 #define H2_OUT 5
 #define SPI_CS 6
+
 #define CAN_SPEED CAN_500KBPS // speed of CAN network
 #define CAN_CONTROLLER_SPEED MCP_8MHz 
 #define CAN_H2_ID 0x256
@@ -147,7 +150,7 @@ void canHandle(){
 
 void throttleHandle(){
   int throttleRead = analogRead(THROTTLE_IN);
-  float voltageValue = 5.0 / 1023.0 * throttleRead;
+  float voltageValue = 5.0 / 1023.0 * throttleRead; // Check arduino documentation for analogRead
   int throttleNormalized = (((voltageValue) - RAW_THROTTLE_MIN) / (RAW_THROTTLE_MAX-RAW_THROTTLE_MIN)) * DIGIPOT_STEPS;
   int throttleScaled = throttleNormalized; // Option to add scaling factor here
 
