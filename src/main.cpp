@@ -2,6 +2,8 @@
 #include "mcp2515_can.h"
 #include <SPI.h>
 
+#define DEBUG_SERIAL 0
+
 //Pins
 #define THROTTLE_IN A0
 #define THROTTLE_OUT 10
@@ -23,9 +25,7 @@
 
 mcp2515_can can(SPI_CS); // creating CAN object
 
- static bool h2Flag = false;
- static float currentH2Percent = 100;
-
+static float currentH2Percent = 100;
 
 // This struct contains all the components of a CAN message. dataLength must be <= 8, 
 // and the first [dataLength] positions of data[] must contain valid data
@@ -75,8 +75,10 @@ String getErrorDescription(int errorCode){
 }
 
 void setup() {
-  // Pins
+  if(DEBUG_SERIAL){
   Serial.begin(9600);
+  }
+  // Pins
   pinMode(THROTTLE_IN, INPUT);
   pinMode(THROTTLE_OUT, OUTPUT);
   pinMode(THROTTLE_ENABLE, OUTPUT);
@@ -85,8 +87,9 @@ void setup() {
 
 	// CAN begin
 	int error = can.begin(CAN_SPEED, CAN_CONTROLLER_SPEED); // checks if it can communicate with mcp
-	Serial.println("CAN Init Status: " + getErrorDescription(error));
-  
+  if(DEBUG_SERIAL){
+	  Serial.println("CAN Init Status: " + getErrorDescription(error));
+  }
   // SPI
   SPI.begin();
 
@@ -108,32 +111,29 @@ void canHandle(){
     message.dataLength = 8;
     can.readMsgBuf(&message.dataLength, message.data); 
     // Polling based read of CAN message
-
-    Serial.print("ID: ");
-    Serial.println(message.id);
-
+    message.id = can.getCanId();
+    if(DEBUG_SERIAL){
+      Serial.print("ID: ");
+      Serial.println(message.id);
+    }
     if (message.id == CAN_H2_ID) {
       // Read H2 values in CAN frame
       uint16_t h2Int = 0;
       h2Int = message.data[1]<<8 | message.data[2];
       newH2Percent = h2Int * 0.01; // 0.00 - 100.00
-
-      Serial.print("newH2Percent: ");
-      Serial.println(newH2Percent);
-
-      h2Flag = true;
+      if(DEBUG_SERIAL){
+        Serial.print("newH2Percent: ");
+        Serial.println(newH2Percent);
+      }
     } else{
       newH2Percent = 100.0;
-      Serial.println("Uh oh");
+      if(DEBUG_SERIAL){
+        Serial.println("Uh oh");
+      }
     }
   }
 
-  if(h2Flag){
-    Serial.print("H2 Flag: ");
-    Serial.println(h2Flag);
-  }
-
-  if(newH2Percent == currentH2Percent){ return; }
+  if(newH2Percent == currentH2Percent){ return; } // No change, no need to write
 
   // Write
   if(newH2Percent >= H2_THRESHOLD){
@@ -149,7 +149,7 @@ void throttleHandle(){
   int throttleRead = analogRead(THROTTLE_IN);
   float voltageValue = 5.0 / 1023.0 * throttleRead;
   int throttleNormalized = (((voltageValue) - RAW_THROTTLE_MIN) / (RAW_THROTTLE_MAX-RAW_THROTTLE_MIN)) * DIGIPOT_STEPS;
-  int throttleScaled = throttleNormalized;
+  int throttleScaled = throttleNormalized; // Option to add scaling factor here
 
   if(throttleScaled > THROTTLE_MAX){
     digiPotWrite(THROTTLE_OUT, THROTTLE_MAX);
