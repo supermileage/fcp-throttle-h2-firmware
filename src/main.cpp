@@ -25,12 +25,18 @@
 #define CAN_H2_ID 0x256
 
 #define THROTTLE_ENABLE_TIME 1000 //(ms)
+#define H2_WARMUP_TIME 60000 //(ms)
 
 #define H2_THRESHOLD 1.0 // % hydrogen concentration
 
 mcp2515_can can(SPI_CS); // creating CAN object
 
 static float currentH2Percent = 100;
+
+static unsigned long t_initFinished = 0;
+
+static bool h2PassedWarmupTime = 0;
+static bool h2ReachedZero = 0;
 
 // This struct contains all the components of a CAN message. dataLength must be <= 8, 
 // and the first [dataLength] positions of data[] must contain valid data
@@ -44,6 +50,7 @@ typedef uint8_t CanBuffer[8];
 void throttleHandle();
 void canHandle();
 void digiPotWrite(pin_size_t cs, uint8_t step);
+void h2Write(float newH2Percent);
 
 int static a = 0;
 
@@ -106,6 +113,8 @@ void setup() {
   //Throttle enable
   delay(THROTTLE_ENABLE_TIME);
   digitalWrite(THROTTLE_ENABLE, HIGH);
+
+  t_initFinished = millis();
 }
 
 void loop() {
@@ -118,6 +127,7 @@ void canHandle(){
     digiPotWrite(H2_OUT, 0);
     return;
   }
+
   float newH2Percent = currentH2Percent;
   if (can.checkReceive() == CAN_MSGAVAIL) {
     CanMessage message;
@@ -149,14 +159,26 @@ void canHandle(){
 
   if(newH2Percent == currentH2Percent){ return; } // No change, no need to write
 
-  // Write
-  if(newH2Percent >= H2_THRESHOLD){
-    //Shut down
-    digiPotWrite(H2_OUT, 128);
-  } else{
-    // We're good
-    digiPotWrite(H2_OUT, 0);
-  }
+  if(h2PassedWarmupTime || h2ReachedZero) {
+    // H2 has passed warmup time or has reached zero - safe to write new value
+    h2Write(newH2Percent);
+  } else {
+    if(!h2PassedWarmupTime && millis() - t_initFinished >= H2_WARMUP_TIME) {
+        // H2 just warmed up
+        h2PassedWarmupTime = 1;
+        h2Write(newH2Percent);  // Now we can write the value
+      } else if(millis() - t_initFinished < H2_WARMUP_TIME) {
+      // H2 hasn't had enough time to warm up
+      if(newH2Percent == 0.0) {
+        h2ReachedZero = 1;
+        h2Write(newH2Percent);  // 0 is always safe to write
+      } else {
+        digiPotWrite(H2_OUT, 0);  // Force to 0 during warmup
+        // Don't write the new value yet
+        return;
+      }
+    }
+  } 
 }
 
 void throttleHandle(){
@@ -192,5 +214,16 @@ void digiPotWrite(pin_size_t cs, uint8_t step){
   if(DEBUG_THROTTLE){
     Serial.print("Step: ");
     Serial.println(step);
+  }
+}
+
+void h2Write(float newH2Percent){
+  // Write
+  if(newH2Percent >= H2_THRESHOLD){
+    //Shut down
+    digiPotWrite(H2_OUT, 128);
+  } else{
+    // We're good
+    digiPotWrite(H2_OUT, 0);
   }
 }
