@@ -2,8 +2,9 @@
 #include "mcp2515_can.h"
 #include <SPI.h>
 
-#define DEBUG_SERIAL 0 // 1 to enable serial debugging print statements
-#define DEBUG_H2_FORCED_OFF 0 // 0 for normal operation, 1 to force H2 off to allow for testing of throttle
+#define DEBUG_SERIAL 1 // 1 to enable serial (CAN H2) debugging print statements
+#define DEBUG_THROTTLE 1 // 1 to enable throttle debugging print statements
+#define DEBUG_H2_FORCED_OFF 1 // 0 for normal operation, 1 to force H2 off to allow for testing of throttle
 
 //Pins
 #define THROTTLE_IN A0
@@ -160,6 +161,10 @@ void canHandle(){
 
 void throttleHandle(){
   int throttleRead = analogRead(THROTTLE_IN);
+  if (DEBUG_THROTTLE){
+    Serial.print("Throttle Read: ");
+    Serial.println(throttleRead);
+  }
   float voltageValue = 5.0 / 1023.0 * throttleRead; // Check arduino documentation for analogRead
   int throttleNormalized = (((voltageValue) - RAW_THROTTLE_MIN) / (RAW_THROTTLE_MAX-RAW_THROTTLE_MIN)) * DIGIPOT_STEPS;
   int throttleScaled = throttleNormalized; // Option to add scaling factor here
@@ -183,4 +188,9 @@ void digiPotWrite(pin_size_t cs, uint8_t step){
   SPI.transfer(step);
 
   digitalWrite(cs, HIGH);
+
+  if(DEBUG_THROTTLE){
+    Serial.print("Step: ");
+    Serial.println(step);
+  }
 }
