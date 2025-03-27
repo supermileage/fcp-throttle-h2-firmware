@@ -2,9 +2,9 @@
 #include "mcp2515_can.h"
 #include <SPI.h>
 
-#define DEBUG_SERIAL 1 // 1 to enable serial (CAN H2) debugging print statements
-#define DEBUG_THROTTLE 1 // 1 to enable throttle debugging print statements
-#define DEBUG_H2_FORCED_OFF 1 // 0 for normal operation, 1 to force H2 off to allow for testing of throttle
+#define DEBUG_SERIAL 0 // 1 to enable serial (CAN H2) debugging print statements
+#define DEBUG_THROTTLE 0 // 1 to enable throttle debugging print statements
+#define DEBUG_H2_FORCED_OFF 0 // 0 for normal operation, 1 to force H2 off to allow for testing of throttle
 
 //Pins
 #define THROTTLE_IN A0
