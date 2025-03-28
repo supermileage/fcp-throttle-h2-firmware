@@ -2,8 +2,8 @@
 #include "mcp2515_can.h"
 #include <SPI.h>
 
-#define DEBUG_SERIAL 0 // 1 to enable serial (CAN H2) debugging print statements
-#define DEBUG_THROTTLE 1 // 1 to enable throttle debugging print statements
+#define DEBUG_SERIAL 1 // 1 to enable serial (CAN H2) debugging print statements
+#define DEBUG_THROTTLE 0 // 1 to enable throttle debugging print statements
 #define DEBUG_H2_FORCED_OFF 0 // 0 for normal operation, 1 to force H2 off to allow for testing of throttle
 
 //Pins
@@ -25,13 +25,11 @@
 #define CAN_H2_ID 0x256
 
 #define THROTTLE_ENABLE_TIME 1000 //(ms)
-#define H2_WARMUP_TIME 60000 //(ms)
+#define H2_WARMUP_TIME 6000 //(ms)
 
 #define H2_THRESHOLD 1.0 // % hydrogen concentration
 
 mcp2515_can can(SPI_CS); // creating CAN object
-
-static float previousH2Percent = 101;
 
 static unsigned long t_initFinished = 0;
 
@@ -53,8 +51,6 @@ void digiPotWrite(pin_size_t cs, uint8_t step);
 void h2Write(float newH2Percent);
 
 String getErrorDescription(int errorCode);
-
-int static a = 0;
 
 void setup() {
     
@@ -86,6 +82,7 @@ void setup() {
   digitalWrite(THROTTLE_ENABLE, HIGH);
 
   t_initFinished = millis();
+  digiPotWrite(H2_OUT, 0);
 }
 
 void loop() {
@@ -99,7 +96,8 @@ void canHandle(){
     return;
   }
 
-  float newH2Percent = previousH2Percent;
+  float newH2Percent = 0.1;
+
   if (can.checkReceive() == CAN_MSGAVAIL) {
     CanMessage message;
     message.id = 0;
@@ -108,14 +106,14 @@ void canHandle(){
     // Polling based read of CAN message
     message.id = can.getCanId();
     if(DEBUG_SERIAL){
-      Serial.print("ID: ");
-      Serial.println(message.id);
+      //Serial.print("ID: ");
+      //Serial.println(message.id);
     }
     if (message.id == CAN_H2_ID) {
       // Read H2 values in CAN frame
       uint16_t h2Int = 0;
       h2Int = message.data[1]<<8 | message.data[2];
-      float newH2Percent = h2Int * 0.01; // 0.00 - 100.00
+      newH2Percent = h2Int * 0.01; // 0.00 - 100.00
       if(DEBUG_SERIAL){
         Serial.print("newH2Percent: ");
         Serial.println(newH2Percent);
@@ -127,10 +125,6 @@ void canHandle(){
       }
     }
   }
-
-  if(newH2Percent == previousH2Percent){ return;} // No change, no need to write
-
-  previousH2Percent = newH2Percent;
 
   if(h2PassedWarmupTime || h2ReachedZero) {
     // H2 has passed warmup time or has reached zero - safe to write new value
@@ -197,12 +191,15 @@ void digiPotWrite(pin_size_t cs, uint8_t step){
 }
 
 void h2Write(float newH2Percent){
+    Serial.print("h2write: ");
+    Serial.println(newH2Percent);
   // Write
   if(newH2Percent >= H2_THRESHOLD){
     //Shut down
     digiPotWrite(H2_OUT, 128);
   } else{
     // We're good
+    
     digiPotWrite(H2_OUT, 0);
   }
 }
