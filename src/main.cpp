@@ -31,7 +31,7 @@
 
 mcp2515_can can(SPI_CS); // creating CAN object
 
-static float currentH2Percent = 100;
+static float previousH2Percent = 101;
 
 static unsigned long t_initFinished = 0;
 
@@ -52,39 +52,9 @@ void canHandle();
 void digiPotWrite(pin_size_t cs, uint8_t step);
 void h2Write(float newH2Percent);
 
-int static a = 0;
+String getErrorDescription(int errorCode);
 
-String getErrorDescription(int errorCode){
-  switch(errorCode){
-      case CAN_OK: 
-          return "CAN OK";
-          break;
-      case CAN_FAILINIT:
-          return "CAN FAIL INIT";
-          break;
-      case CAN_FAILTX:
-          return "CAN FAIL TX";
-          break;
-      case CAN_MSGAVAIL:
-          return "CAN MSG AVAIL";
-          break;
-      case CAN_NOMSG:
-          return "CAN NO MSG";
-          break;
-      case CAN_CTRLERROR:
-          return "CAN CTRL ERROR";
-          break;
-      case CAN_GETTXBFTIMEOUT:
-          return "CAN TX BF TIMEOUT";
-          break;
-      case CAN_SENDMSGTIMEOUT:    
-          return "CAN SEND MSG TIMEOUT";
-          break;
-      default:
-          return "CAN FAIL";
-          break;
-  }
-}
+int static a = 0;
 
 void setup() {
     
@@ -129,7 +99,7 @@ void canHandle(){
     return;
   }
 
-  float newH2Percent = currentH2Percent;
+  float newH2Percent = previousH2Percent;
   if (can.checkReceive() == CAN_MSGAVAIL) {
     CanMessage message;
     message.id = 0;
@@ -145,7 +115,7 @@ void canHandle(){
       // Read H2 values in CAN frame
       uint16_t h2Int = 0;
       h2Int = message.data[1]<<8 | message.data[2];
-      newH2Percent = h2Int * 0.01; // 0.00 - 100.00
+      float newH2Percent = h2Int * 0.01; // 0.00 - 100.00
       if(DEBUG_SERIAL){
         Serial.print("newH2Percent: ");
         Serial.println(newH2Percent);
@@ -158,28 +128,36 @@ void canHandle(){
     }
   }
 
-  if(newH2Percent == currentH2Percent){ return; } // No change, no need to write
+  if(newH2Percent == previousH2Percent){ return;} // No change, no need to write
+
+  previousH2Percent = newH2Percent;
 
   if(h2PassedWarmupTime || h2ReachedZero) {
     // H2 has passed warmup time or has reached zero - safe to write new value
     h2Write(newH2Percent);
   } else {
-    if(!h2PassedWarmupTime && millis() - t_initFinished >= H2_WARMUP_TIME) {
+    if(millis() - t_initFinished >= H2_WARMUP_TIME) {
         // H2 just warmed up
         h2PassedWarmupTime = 1;
         h2Write(newH2Percent);  // Now we can write the value
-      } else if(millis() - t_initFinished < H2_WARMUP_TIME) {
-      // H2 hasn't had enough time to warm up
-      if(newH2Percent == 0.0) {
-        h2ReachedZero = 1;
-        h2Write(newH2Percent);  // 0 is always safe to write
+        if (DEBUG_SERIAL){
+            Serial.println("H2 warmup time complete");
+        }
       } else {
-        digiPotWrite(H2_OUT, 0);  // Force to 0 during warmup
-        // Don't write the new value yet
-        return;
+      // H2 hasn't had enough time to warm up
+        if(newH2Percent == 0.0) {
+            h2ReachedZero = 1;
+            h2Write(newH2Percent);  // 0 is always safe to write
+            if (DEBUG_SERIAL){
+                Serial.println("H2 value reached 0, warmup done");
+            }
+        } else {
+            digiPotWrite(H2_OUT, 0);  // Force to 0 during warmup
+            // Don't write the new value yet
+            return;
       }
     }
-  } 
+  }
 }
 
 void throttleHandle(){
@@ -227,4 +205,36 @@ void h2Write(float newH2Percent){
     // We're good
     digiPotWrite(H2_OUT, 0);
   }
+}
+
+String getErrorDescription(int errorCode){
+    switch(errorCode){
+        case CAN_OK: 
+            return "CAN OK";
+            break;
+        case CAN_FAILINIT:
+            return "CAN FAIL INIT";
+            break;
+        case CAN_FAILTX:
+            return "CAN FAIL TX";
+            break;
+        case CAN_MSGAVAIL:
+            return "CAN MSG AVAIL";
+            break;
+        case CAN_NOMSG:
+            return "CAN NO MSG";
+            break;
+        case CAN_CTRLERROR:
+            return "CAN CTRL ERROR";
+            break;
+        case CAN_GETTXBFTIMEOUT:
+            return "CAN TX BF TIMEOUT";
+            break;
+        case CAN_SENDMSGTIMEOUT:    
+            return "CAN SEND MSG TIMEOUT";
+            break;
+        default:
+            return "CAN FAIL";
+            break;
+    }
 }
